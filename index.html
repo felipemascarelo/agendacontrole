@@ -61,40 +61,44 @@ input,select{width:100%;min-height:44px;background:#fff;border:1.5px solid #DDD8
 </style></head><body><div id="authbar" style="max-width:560px;margin:0 auto;padding:14px 14px 0"></div><div id="app"></div>
 <script>
 const DN=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'],HS=[];for(let h=5;h<=23;h++)HS.push(h);
-let S={matrix:{},weeks:{},log:{},fin:[],times:{},al:{},dfix:[],paid:{}};
+let S={matrix:{},weeks:{},log:{},fin:[],times:{},al:{},dfix:[],paid:{},rm:{},rd:{}};
 try{const r=localStorage.getItem('agfin');if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
 const cs=v=>JSON.stringify(v,(k,x)=>x&&typeof x==='object'&&!Array.isArray(x)?Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0)):x);
 const DBG={db:null,ready:false,last:{},q:Promise.resolve(),timer:null,st:'local'};
 const ST={local:'Salvo só neste aparelho',sync:'Sincronizado na sua conta',busy:'Salvando…',err:'Erro ao sincronizar. Recarregue a página.',login:'Entre com o Google para sincronizar (por enquanto salvo só neste aparelho)',nocfg:'Firebase ainda não configurado. Salvo só neste aparelho.',cfgerr:'Erro no firebase-config.js: confira aspas e vírgulas. Salvo só neste aparelho.'};
 function setSt(x){DBG.st=x;const e=document.getElementById('st');if(e)e.textContent=ST[x]}
 const save=()=>{try{localStorage.setItem('agfin',JSON.stringify(S))}catch(e){}clearTimeout(DBG.timer);DBG.timer=setTimeout(flush,500)};
-function docsOf(){const o={};o['app/core']={matrix:S.matrix,times:S.times,al:S.al,dfix:S.dfix,paid:S.paid};
+function docsOf(){const o={};o['app/core']={matrix:S.matrix,times:S.times,al:S.al,dfix:S.dfix,paid:S.paid,rm:S.rm};
  for(const k in S.weeks)o['weeks/'+k]=S.weeks[k];
  const lm={};for(const k in S.log){const m=k.slice(0,7);(lm[m]=lm[m]||{})[k]=S.log[k]}
  for(const m in lm)o['logs/'+m]=lm[m];
- for(const q in DBG.last)if(q.startsWith('logs/')&&!o[q])o[q]={};
+ const rdm={};for(const k in S.rd){const m=k.slice(0,7);(rdm[m]=rdm[m]||{})[k]=S.rd[k]}
+ for(const m in rdm)o['rdays/'+m]=rdm[m];
+ for(const q in DBG.last)if((q.startsWith('logs/')||q.startsWith('rdays/'))&&!o[q])o[q]={};
  return o}
 function flush(){if(!DBG.db||!DBG.ready)return;const d=docsOf(),jobs=[];for(const q in d){const j=cs(d[q]);if(DBG.last[q]!==j)jobs.push([q,j])}
  if(!jobs.length)return;setSt('busy');
  DBG.q=DBG.q.then(async()=>{try{for(const [q,j] of jobs){await DBG.db.doc(q).set({j});DBG.last[q]=j}setSt('sync')}catch(e){setSt('err')}})}
 const pj=x=>{try{return JSON.parse(x)}catch(e){return null}};
-const hasData=(c,nl)=>Object.keys(c.matrix||{}).length||Object.keys(c.al||{}).length||(c.dfix||[]).length||Object.keys(c.paid||{}).length||Object.keys(c.times||{}).length||nl>0;
+const hasData=(c,nl)=>Object.keys(c.matrix||{}).length||Object.keys(c.al||{}).length||(c.dfix||[]).length||Object.keys(c.paid||{}).length||Object.keys(c.times||{}).length||Object.keys(c.rm||{}).length||nl>0;
 function syncLast(){const d=docsOf();for(const q in d)DBG.last[q]=cs(d[q])}
-function applyCore(o){S.matrix=o.matrix||{};S.times=o.times||{};S.al=o.al||{};S.dfix=o.dfix||[];S.paid=o.paid||{}}
+function applyCore(o){S.matrix=o.matrix||{};S.times=o.times||{};S.al=o.al||{};S.dfix=o.dfix||[];S.paid=o.paid||{};S.rm=o.rm||{}}
+function applyRdMonth(id,o){for(const k in S.rd)if(k.startsWith(id))delete S.rd[k];Object.assign(S.rd,o||{})}
 function applyLogMonth(id,o){for(const k in S.log)if(k.startsWith(id))delete S.log[k];Object.assign(S.log,o||{})}
 function rerender(){const a=document.activeElement;if(a&&/INPUT|SELECT/.test(a.tagName))return;render()}
 async function initDb(db){
  if(!db)return;DBG.db=db;
  try{
-  const [c,ws,ls]=await Promise.all([db.doc('app/core').get(),db.collection('weeks').get(),db.collection('logs').get()]);
+  const [c,ws,ls,rs]=await Promise.all([db.doc('app/core').get(),db.collection('weeks').get(),db.collection('logs').get(),db.collection('rdays').get()]);
   const rc=c.exists?(pj(c.data().j)||{}):{},rl={};let n=0;
   ls.docs.forEach(d=>{const o=pj(d.data().j)||{};rl[d.id]=o;n+=Object.keys(o).length});
-  const remoteHas=hasData(rc,n),localHas=hasData(S,Object.keys(S.log).length);
+  const rr={};rs.docs.forEach(d=>{const o=pj(d.data().j)||{};rr[d.id]=o;n+=Object.keys(o).length});
+  const remoteHas=hasData(rc,n),localHas=hasData(S,Object.keys(S.log).length+Object.keys(S.rd).length);
   if(remoteHas){
-   applyCore(rc);S.log={};for(const m in rl)Object.assign(S.log,rl[m]);
+   applyCore(rc);S.log={};for(const m in rl)Object.assign(S.log,rl[m]);S.rd={};for(const m in rr)Object.assign(S.rd,rr[m]);
    S.weeks={};ws.docs.forEach(d=>{const o=pj(d.data().j);if(o)S.weeks[d.id]=o});
    try{localStorage.setItem('agfin',JSON.stringify(S))}catch(e){}
-   syncLast();ls.docs.forEach(d=>{const q='logs/'+d.id;if(!(q in DBG.last))DBG.last[q]=cs({})});
+   syncLast();ls.docs.forEach(d=>{const q='logs/'+d.id;if(!(q in DBG.last))DBG.last[q]=cs({})});rs.docs.forEach(d=>{const q='rdays/'+d.id;if(!(q in DBG.last))DBG.last[q]=cs({})});
    rerender();
   }
   DBG.ready=true;
@@ -102,6 +106,7 @@ async function initDb(db){
   db.doc('app/core').onSnapshot(sn=>{if(!sn.exists||sn.metadata.hasPendingWrites)return;const o=pj(sn.data().j);if(!o||cs(o)===DBG.last['app/core'])return;applyCore(o);DBG.last['app/core']=cs(docsOf()['app/core']);rerender()},()=>{});
   db.collection('weeks').onSnapshot(qs=>{let ch=0;qs.docChanges().forEach(c2=>{if(c2.type==='removed'||c2.doc.metadata.hasPendingWrites)return;const o=pj(c2.doc.data().j),q='weeks/'+c2.doc.id;if(!o||cs(o)===DBG.last[q])return;S.weeks[c2.doc.id]=o;DBG.last[q]=cs(o);ch=1});if(ch)rerender()},()=>{});
   db.collection('logs').onSnapshot(qs=>{let ch=0;qs.docChanges().forEach(c2=>{if(c2.type==='removed'||c2.doc.metadata.hasPendingWrites)return;const o=pj(c2.doc.data().j),q='logs/'+c2.doc.id;if(!o||cs(o)===DBG.last[q])return;applyLogMonth(c2.doc.id,o);DBG.last[q]=cs(o);ch=1});if(ch)rerender()},()=>{});
+  db.collection('rdays').onSnapshot(qs=>{let ch=0;qs.docChanges().forEach(c2=>{if(c2.type==='removed'||c2.doc.metadata.hasPendingWrites)return;const o=pj(c2.doc.data().j),q='rdays/'+c2.doc.id;if(!o||cs(o)===DBG.last[q])return;applyRdMonth(c2.doc.id,o);DBG.last[q]=cs(o);ch=1});if(ch)rerender()},()=>{});
  }catch(e){setSt('err')}
 }
 const p2=n=>String(n).padStart(2,'0'),dk=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
@@ -112,18 +117,18 @@ const brl=n=>n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const ym0=dk(new Date()).slice(0,7),tdx=(new Date().getDay()+6)%7;
 const shiftM=(ym,n)=>{const d=new Date(+ym.slice(0,4),+ym.slice(5)-1+n,1);return dk(d).slice(0,7)};
 const mlabel=ym=>new Date(+ym.slice(0,4),+ym.slice(5)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
-let V={tab:'ag',sub:'sem',wk:mon(new Date()),day:tdx,mday:0,rk:null,fk:null,mk:null,fs:'r',fe:null,am:ym0,fm:ym0};
+let V={tab:'ag',sub:'sem',wk:mon(new Date()),day:tdx,mday:0,rk:null,fk:null,mk:null,fs:'r',fe:null,rwk:mon(new Date()),rday:tdx,rmday:0,rs:'dia',am:ym0,fm:ym0};
 const wdataW=w=>{const k=dk(w);if(!S.weeks[k]){const o={};for(let d=0;d<7;d++){const T=dtimes(d);HS.forEach(h=>{const n=S.matrix[d+'|'+h],kk=dk(addD(w,d))+'|'+h;if(n)o[kk]=n;o['t'+kk]=T[h]})}S.weeks[k]=o;save()}return S.weeks[k]},wdata=()=>wdataW(V.wk);
 const fmt=m=>p2(Math.floor(m/60)%24)+':'+p2(m%60),tmin=s=>+s.slice(0,2)*60+ +s.slice(3,5);
 function dtimes(d){const r={};let p=null;HS.forEach(h=>{const o=S.times[d+'|'+h],m=o?tmin(o):(p===null?h*60:p+60);r[h]=fmt(m);p=m});return r}
 const students=()=>{const s=new Set(Object.values(S.matrix));Object.values(S.log).forEach(l=>s.add(l.name));return [...s].sort()};
 const svg=(d,s=22,w=2.2)=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-const P={ck:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',warn:'<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',plus:'<path d="M12 5v14M5 12h14"/>',l:'<path d="M15 6l-6 6 6 6"/>',r:'<path d="M9 6l6 6-6 6"/>',cal:'<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',grid:'<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',chart:'<path d="M6 20V11M12 20V5M18 20v-6"/>',wallet:'<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16.5" height="11.5" rx="3"/><path d="M16 13.5h.01"/>',swap:'<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',rep:'<path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/>'};
+const P={ck:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',warn:'<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',plus:'<path d="M12 5v14M5 12h14"/>',l:'<path d="M15 6l-6 6 6 6"/>',r:'<path d="M9 6l6 6-6 6"/>',cal:'<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',grid:'<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',chart:'<path d="M6 20V11M12 20V5M18 20v-6"/>',wallet:'<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16.5" height="11.5" rx="3"/><path d="M16 13.5h.01"/>',swap:'<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>',bell:'<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/>',rep:'<path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 4v5h-5M20 12a8 8 0 0 1-14 5.3L4 15M4 20v-5h5"/>'};
 const PAL=['#6D4AE0','#C27803','#E4572E','#1FA37A','#3B6FD4','#A24BC4'],tcol=n=>{let h=0;for(const c of String(n))h=(h*31+c.charCodeAt(0))>>>0;return PAL[h%PAL.length]},ini=n=>String(n).trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(),cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
 const FULLDN=['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo'];
 const btn=(a,t,x='',c='')=>`<button class="${c}" data-a="${a}" ${x}>${t}</button>`;
 const nav=(a,l)=>`<div class="hn">${btn(a,svg(P.l,20,2.4),'data-n="-1" aria-label="Anterior"','rb')}<b>${l}</b>${btn(a,svg(P.r,20,2.4),'data-n="1" aria-label="Próximo"','rb')}</div>`;
-const chips=(sel,a)=>`<div class="days">${DN.map((n,i)=>{const d=addD(V.wk,i);return `<button class="chip ${i===sel?'sel':''} ${dk(d)===dk(new Date())?'td':''}" data-a="${a}" data-n="${i}">${n}<span>${d.getDate()}</span></button>`}).join('')}</div>`;
+const chips=(sel,a,wk=V.wk)=>`<div class="days">${DN.map((n,i)=>{const d=addD(wk,i);return `<button class="chip ${i===sel?'sel':''} ${dk(d)===dk(new Date())?'td':''}" data-a="${a}" data-n="${i}">${n}<span>${d.getDate()}</span></button>`}).join('')}</div>`;
 const bar=(pct,label,idb,idl)=>`<div><div class="bar"><i ${idb?`id="${idb}" `:''}style="width:${pct}%"></i></div><div class="bl" ${idl?`id="${idl}"`:''}>${label}</div></div>`;
 const hdr=(top,label,big,cards,barH)=>`<div class="hd"><div class="stl" id="st"></div>${top}<div><div class="hl">${label}</div><div class="hb">${big}</div></div>${cards?`<div class="cards">${cards.map(c=>`<div class="cd"><div class="hl2">${c[0]}</div><div class="cv" ${c[3]?`id="${c[3]}" `:''}style="color:${c[2]}">${c[1]}</div></div>`).join('')}</div>`:''}${barH||''}</div>`;
 function slot(d,h){const k=dk(d)+'|'+h,w=wdata(),base=w[k]||'',l=S.log[k],t=w['t'+k]||p2(h)+':00';
@@ -166,12 +171,30 @@ function fin(){const m=V.fm,t=tot(),al=alist(),D=[...S.dfix].sort((a,b)=>a.dia-b
   `<div class="panel" style="margin-top:12px"><div class="ptit">Nova despesa</div><div class="prow"><input id="dn" placeholder="Nome (ex.: Aluguel)" aria-label="Nome da despesa"></div><div class="prow"><input id="dv" type="number" inputmode="decimal" step="0.01" placeholder="Valor" aria-label="Valor"><input id="dd" type="number" inputmode="numeric" min="1" max="31" placeholder="Vence dia" aria-label="Dia do vencimento"></div>${btn('adddf','Adicionar despesa','','pri')}</div>`;
  }
  return{hd,body:seg+body}}
-function bnav(){const it=[['ag|sem','Semana',P.cal],['ag|mat','Matriz',P.grid],['ag|mes','Mês',P.chart],['fi|','Finanças',P.wallet]];
- return `<nav class="bn" aria-label="Navegação principal">${it.map(([k,l,p])=>{const on=k==='fi|'?V.tab==='fi':(V.tab==='ag'&&V.sub===k.slice(3));return `<button class="ni${on?' on':''}" data-a="go" data-k="${k}"${on?' aria-current="page"':''}><span>${svg(p)}</span>${l}</button>`}).join('')}</nav>`}
-function render(){const v=V.tab==='ag'?(V.sub==='sem'?semana():V.sub==='mat'?matriz():mes()):fin();
+
+function rdate(){return addD(V.rwk,V.rday)}
+function rget(ds){if(!S.rd[ds]){const d=new Date(+ds.slice(0,4),+ds.slice(5,7)-1,+ds.slice(8,10)),wd=(d.getDay()+6)%7;S.rd[ds]=(S.rm[wd]||[]).map(x=>({id:'f'+x.id,src:x.id,tx:x.tx,tm:x.tm||'',dn:false}));save()}return S.rd[ds]}
+const rsort=a=>[...a].sort((x,y)=>{const p=x.tm||'99:99',q=y.tm||'99:99';return p<q?-1:p>q?1:0});
+function lembretes(){
+ const rseg=`<div class="seg" role="group" aria-label="Do dia ou tarefas fixas">${btn('rsub','Do dia',`data-k="dia" aria-pressed="${V.rs==='dia'}"`,V.rs==='dia'?'on':'')}${btn('rsub','Tarefas fixas',`data-k="fix" aria-pressed="${V.rs==='fix'}"`,V.rs==='fix'?'on':'')}</div>`;
+ if(V.rs==='fix'){
+  const L=rsort(S.rm[V.rmday]||[]),nt=Object.values(S.rm).reduce((a,l)=>a+l.length,0);
+  return{hd:hdr(`<div class="hn"><b>Tarefas fixas</b></div>`,'Lembretes · '+FULLDN[V.rmday],`${L.length} ${L.length===1?'tarefa':'tarefas'}`,[['Neste dia',L.length,'#6EE7B7'],['Na semana',nt,'#FFFFFF']]),
+  body:rseg+`<p class="hint" style="margin-top:0">Tarefas fixas entram sozinhas em todas as semanas, no dia escolhido.</p>${chips(V.rmday,'rmday',V.rwk)}`+(L.length?`<div class="list">${L.map(x=>`<div class="it"><div class="tile" style="background:#6D4AE0">${svg(P.bell,20)}</div><div class="tx"><div class="nm">${esc(x.tx)}</div><div class="sb">${x.tm||'Sem horário'}</div></div>${btn('fxdel',svg(P.x,20,2.4),`data-k="${x.id}" aria-label="Excluir tarefa fixa"`,'ib')}</div>`).join('')}</div>`:'<p class="hint">Nenhuma tarefa fixa neste dia.</p>')+`<div class="panel" style="margin-top:12px"><div class="ptit">Nova tarefa fixa de ${FULLDN[V.rmday].toLowerCase()}</div><div class="prow"><input id="xt" placeholder="Tarefa" aria-label="Tarefa"><input id="xm" type="time" aria-label="Horário (opcional)" style="max-width:136px;flex:none"></div>${btn('fxadd','Adicionar tarefa fixa','','pri')}</div>`};
+ }
+ const a=V.rwk,b=addD(a,6),f=x=>x.toLocaleDateString('pt-BR',{day:'numeric',month:'short'}),d=rdate(),ds=dk(d),L=rsort(rget(ds)),dn=L.filter(x=>x.dn).length,pend=L.length-dn,pct=L.length?Math.round(dn/L.length*100):0,isT=ds===dk(new Date()),lab=cap(d.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}));
+ return{hd:hdr(nav('rwk',f(a)+' – '+f(b)),`<span>${lab}</span>${isT?'':btn('rtoday','Hoje','','hoje')}`,`${L.length} ${L.length===1?'tarefa':'tarefas'}`,[['Concluídas',dn,'#6EE7B7'],['Pendentes',pend,'#FFD28A']],bar(pct,`${dn} de ${L.length} ${L.length===1?'tarefa concluída':'tarefas concluídas'}`)),
+ body:rseg+chips(V.rday,'rday',V.rwk)+(L.length?`<div class="list">${L.map(x=>`<div class="rw${x.dn?' paid':''}"><div class="it">${btn('rtog',svg(P.ck,20,2.6),`data-k="${ds}|${x.id}" aria-pressed="${x.dn}" aria-label="${x.dn?'Concluída. Toque para desmarcar':'Marcar como concluída'}"`,'cb'+(x.dn?' on':''))}<div class="tx"><div class="nm" style="${x.dn?'text-decoration:line-through;color:#6B6890':''}">${esc(x.tx)}</div><div class="sb">${x.tm?x.tm+' · ':''}${x.src?'Fixa':'Pontual'}</div></div>${btn('rdel',svg(P.x,20,2.4),`data-k="${ds}|${x.id}" aria-label="Excluir tarefa"`,'ib')}</div></div>`).join('')}</div>`:'<p class="hint">Nenhuma tarefa neste dia. Adicione abaixo.</p>')+`<div class="panel" style="margin-top:12px"><div class="ptit">Nova tarefa para este dia</div><div class="prow"><input id="rt" placeholder="Tarefa" aria-label="Tarefa"><input id="rm" type="time" aria-label="Horário (opcional)" style="max-width:136px;flex:none"></div>${btn('radd','Adicionar tarefa','','pri')}</div>`}}
+function bnav(){const it=[['ag|sem','Semana',P.cal],['ag|mat','Matriz',P.grid],['ag|mes','Mês',P.chart],['lm|','Lembretes',P.bell],['fi|','Finanças',P.wallet]];
+ return `<nav class="bn" aria-label="Navegação principal">${it.map(([k,l,p])=>{const on=k==='fi|'?V.tab==='fi':k==='lm|'?V.tab==='lm':(V.tab==='ag'&&V.sub===k.slice(3));return `<button class="ni${on?' on':''}" data-a="go" data-k="${k}"${on?' aria-current="page"':''}><span>${svg(p)}</span>${l}</button>`}).join('')}</nav>`}
+function render(){const v=V.tab==='ag'?(V.sub==='sem'?semana():V.sub==='mat'?matriz():mes()):V.tab==='lm'?lembretes():fin();
  document.getElementById('app').innerHTML=`${v.hd}<div class="sheet"><div id="sheetin">${v.body}</div>${bnav()}</div>`;setSt(DBG.st);document.getElementById('sheetin').insertAdjacentHTML('beforeend','<div class="card"><small>Backup dos dados (ficam salvos neste aparelho)</small><div class="g2" style="margin-top:8px"><button class="ghost" data-bk="exp">Exportar backup</button><button class="ghost" data-bk="imp">Importar backup</button></div><input id="bkf" type="file" accept="application/json,.json" hidden></div>')}
 document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;const a=t.dataset.a,k=t.dataset.k,n=+t.dataset.n;
- if(a==='go'){const q=k.split('|');V.tab=q[0];if(q[1])V.sub=q[1];V.fe=null}else if(a==='tab')V.tab=k;else if(a==='sub')V.sub=k;else if(a==='fsub'){V.fs=k;V.fe=null}else if(a==='fedit')V.fe=V.fe===k?null:k;else if(a==='wk')V.wk=addD(V.wk,7*n);else if(a==='today'){V.wk=mon(new Date());V.day=tdx}
+ if(a==='go'){const q=k.split('|');V.tab=q[0];if(q[1])V.sub=q[1];V.fe=null}else if(a==='tab')V.tab=k;else if(a==='sub')V.sub=k;else if(a==='rsub')V.rs=k;else if(a==='rwk')V.rwk=addD(V.rwk,7*n);else if(a==='rday')V.rday=n;else if(a==='rmday')V.rmday=n;else if(a==='rtoday'){V.rwk=mon(new Date());V.rday=tdx}
+  else if(a==='rtog'||a==='rdel'){const i=k.indexOf('|'),ds=k.slice(0,i),id=k.slice(i+1),L=rget(ds),t=L.find(x=>x.id===id);if(a==='rdel')S.rd[ds]=L.filter(x=>x.id!==id);else if(t)t.dn=!t.dn;save()}
+  else if(a==='radd'){const tx=document.getElementById('rt').value.trim();if(!tx)return;rget(dk(rdate())).push({id:'p'+Date.now(),src:0,tx,tm:document.getElementById('rm').value,dn:false});save()}
+  else if(a==='fxadd'){const tx=document.getElementById('xt').value.trim();if(!tx)return;const tm=document.getElementById('xm').value,id=Date.now(),today=dk(new Date());(S.rm[V.rmday]=S.rm[V.rmday]||[]).push({id,tx,tm});for(const ds in S.rd)if(ds>=today){const d=new Date(+ds.slice(0,4),+ds.slice(5,7)-1,+ds.slice(8,10));if((d.getDay()+6)%7===V.rmday)S.rd[ds].push({id:'f'+id,src:id,tx,tm,dn:false})}save()}
+  else if(a==='fxdel'){const id=+k,today=dk(new Date());for(const w in S.rm)S.rm[w]=S.rm[w].filter(x=>x.id!==id);for(const ds in S.rd)if(ds>=today)S.rd[ds]=S.rd[ds].filter(x=>x.src!==id);save()}else if(a==='fsub'){V.fs=k;V.fe=null}else if(a==='fedit')V.fe=V.fe===k?null:k;else if(a==='wk')V.wk=addD(V.wk,7*n);else if(a==='today'){V.wk=mon(new Date());V.day=tdx}
  else if(a==='day')V.day=n;else if(a==='mday')V.mday=n;else if(a==='am')V.am=shiftM(V.am,n);else if(a==='fm')V.fm=shiftM(V.fm,n);
  else if(a==='falta')V.fk=k;else if(a==='fcom'||a==='fsem'||a==='done'){S.log[k]={name:wdata()[k],type:a};V.fk=null;save()}else if(a==='treset'){delete S.times[k];save()}
  else if(a==='rep')V.rk=k;else if(a==='cancel'){V.rk=null;V.fk=null;V.mk=null}
@@ -191,7 +214,7 @@ document.addEventListener('change',e=>{const fi=e.target.closest('[data-f]');if(
 document.addEventListener('click',e=>{const t=e.target.closest('[data-bk]');if(!t)return;
  if(t.dataset.bk==='exp'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download='agenda-backup-'+dk(new Date())+'.json';document.body.appendChild(a);a.click();a.remove()}
  else document.getElementById('bkf').click()});
-document.addEventListener('change',e=>{if(e.target.id!=='bkf')return;const f=e.target.files[0];if(!f)return;f.text().then(x=>{const o=JSON.parse(x);if(!o||typeof o!=='object'||!o.matrix)throw 0;S=Object.assign({matrix:{},weeks:{},log:{},fin:[],times:{},al:{},dfix:[],paid:{}},o);save();render()}).catch(()=>alert('Arquivo de backup inválido.'))});
+document.addEventListener('change',e=>{if(e.target.id!=='bkf')return;const f=e.target.files[0];if(!f)return;f.text().then(x=>{const o=JSON.parse(x);if(!o||typeof o!=='object'||!o.matrix)throw 0;S=Object.assign({matrix:{},weeks:{},log:{},fin:[],times:{},al:{},dfix:[],paid:{},rm:{},rd:{}},o);save();render()}).catch(()=>alert('Arquivo de backup inválido.'))});
 window.APP={setSt,initDb};render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
